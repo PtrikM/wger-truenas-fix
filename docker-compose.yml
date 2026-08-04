@@ -71,7 +71,7 @@ services:
       # not to the including docker-compose.yml. Production setups that want
       # their own config can override this mount via `volumes: !override`
       # in their compose file.
-      - ./config-powersync:/config:ro
+      - ./services/config-powersync:/config:ro
 
     env_file:
       - ./config/prod.env
@@ -174,7 +174,7 @@ services:
     volumes:
       - redis-data:/data    
       - ./config/redis.conf:/usr/local/etc/redis/redis.conf
-#      - redis-data:/data
+      
     command: [ "redis-server", "/usr/local/etc/redis/redis.conf" ]
     healthcheck:
       test: redis-cli ping
