@@ -74,7 +74,7 @@ services:
       - ./config-powersync:/config:ro
 
     env_file:
-      - ../config/prod.env
+      - ./config/prod.env
 
     environment:
       # This is the path (inside the container) to the YAML config file
@@ -137,7 +137,7 @@ services:
         max-size: 10m
         max-file: 3
     env_file:
-      - ../config/prod.env
+      - ./config/prod.env
     environment:
       - TZ=Europe/Berlin
     volumes:
@@ -173,7 +173,7 @@ services:
       - 6379
     volumes:
       - redis-data:/data    
-      - ../config/redis.conf:/usr/local/etc/redis/redis.conf
+      - ./config/redis.conf:/usr/local/etc/redis/redis.conf
 #      - redis-data:/data
     command: [ "redis-server", "/usr/local/etc/redis/redis.conf" ]
     healthcheck:
