@@ -4,6 +4,9 @@
 # otherwise the static files will not be served correctly! If you do remove
 # it, configure yours similarly to what's in config/nginx.conf
 # Also take a look at the "Static files" section in the .env file
+configs:
+  nginx.conf:
+    file: ./config/nginx.conf
 
 services:
   web:
@@ -103,10 +106,9 @@ services:
       # Prometheus metrics
       - 9090
 
-
   nginx:
     configs:
-      - source: ./config/nginx.conf
+      - source: config/nginx.conf
         target: /etc/nginx/conf.d/default.conf
     image: docker.io/nginx:stable
     logging:
