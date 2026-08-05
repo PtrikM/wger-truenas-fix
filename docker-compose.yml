@@ -113,13 +113,13 @@ services:
         max-file: 3
     depends_on:
       - web
-      - powersync
+      # - powersync
     volumes:
       - ./config:/etc/nginx/conf.d
       - static:/wger/static:ro
       - media:/wger/media:ro
     ports:
-      - "80:80"
+      - "30170:80"
     healthcheck:
       test: ["CMD", "service", "nginx", "status"]
       interval: 10s
