@@ -182,7 +182,7 @@ services:
       # not to the including docker-compose.yml. Production setups that want
       # their own config can override this mount via `volumes: !override`
       # in their compose file.
-      - ./services/config-powersync:/config:ro
+      - ./services/config-powersync:/config
 
     env_file:
       - ./config/prod.env
