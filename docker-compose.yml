@@ -185,7 +185,7 @@ services:
       # not to the including docker-compose.yml. Production setups that want
       # their own config can override this mount via `volumes: !override`
       # in their compose file.
-      - ./services/config-powersync:/home/config:ro
+      - ./services/config-powersync:/home/wger/src/wger/config:ro
 
     env_file:
       - ./config/prod.env
@@ -201,7 +201,7 @@ services:
       #   POWERSYNC_CONFIG_B64: [base64 encoded content]
       # or e.g.: Via a command line parameter
       #    command: ['start', '-r', 'unified', '-c64', '[base64 encoded content]']
-      POWERSYNC_CONFIG_PATH: /home/config/powersync.yaml
+      POWERSYNC_CONFIG_PATH: /home/wger/src/wger/config/powersync.yaml
 
       # Sync rules can be specified as base 64 encoded YAML
       # e.g: Via an environment variable
