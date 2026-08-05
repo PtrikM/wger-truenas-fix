@@ -38,6 +38,7 @@ services:
       - ./config/nginx.conf:/etc/nginx/conf.d/default.conf      
 
   db:
+    image: docker.io/postgres:18.4-trixie
     volumes:  !override
       #  {YOUR_DATABASE_PATH}:/var/lib/postgresql/data
       - /mnt/glop/wger-data/pgdata:/var/lib/postgresql/data
