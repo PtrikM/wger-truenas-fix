@@ -1,0 +1,867 @@
+configs:
+  nginx.conf:
+    content: >
+      # Universal X-Forwarded-Proto handling for all deployment scenarios
+
+      # - Uses upstream value when behind reverse proxy (Traefik, Caddy, etc.)
+
+      # - Falls back to nginx's scheme for direct connections and port
+      forwarding
+
+      map $$http_x_forwarded_proto $$final_forwarded_proto {
+          default $$http_x_forwarded_proto;
+          ''      $$scheme;
+      }
+
+
+      server {
+          listen 30170;
+
+          location / {
+              proxy_pass http://server:8000;
+
+              # Standard proxy headers
+              proxy_set_header Host $$http_host;
+              proxy_set_header X-Real-IP $$remote_addr;
+              proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $$final_forwarded_proto;
+              proxy_set_header X-Forwarded-Host $$http_host;
+
+              # WebSocket support
+              proxy_set_header Upgrade $$http_upgrade;
+              proxy_set_header Connection "upgrade";
+
+              proxy_redirect off;
+              proxy_http_version 1.1;
+
+              # Timeouts for WebSocket connections
+              proxy_read_timeout 86400s;
+              proxy_send_timeout 86400s;
+          }
+
+          location /static/ {
+              alias /wger/static/;
+
+              # Files in the static folder are preprocessed by collectstatic and have a hash
+              # in their names, so we can cache longer
+              add_header Cache-Control "public, max-age=31536000, immutable" always;
+              add_header Vary "Accept-Encoding" always;
+          }
+
+          location /media/ {
+              alias /wger/media/;
+          }
+
+          location /ps/ {
+            proxy_pass http://powersync:8080/;
+            proxy_set_header Host $$http_host;
+            proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For 
+          $$proxy_add_x_forwarded_for;
+          }
+
+          location /health {
+              return 200;
+          }
+
+          client_max_body_size 100M;
+      }
+  permissions_actions_data:
+    content: >-
+      [{"read_only": false, "mount_path": "/mnt/permission/redis_redis_data",
+      "is_temporary": true, "identifier": "redis_redis_data", "recursive": true,
+      "mode": "check", "uid": 568, "gid": 568, "chmod": null}]
+networks:
+  ix-internal-wger-wger-net:
+    enable_ipv6: True
+    external: True
+    labels:
+      tn.network.internal: 'true'
+    name: ix-internal-wger-wger-net
+services:
+  beat:
+    cap_drop:
+      - ALL
+    command:
+      - /start-beat
+    depends_on:
+      permissions:
+        condition: service_completed_successfully
+      worker:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4096M
+    environment:
+      CELERY_BACKEND: redis://default:fatergos@redis:6379/2
+      CELERY_BROKER: redis://default:fatergos@redis:6379/2
+      CELERY_FLOWER_PASSWORD: IKYM2ot5yXrC8yD_LDwrkn92egzK3Szd
+      CSRF_TRUSTED_ORIGINS: http://10.168.168.236:30170
+      DEBUG: 'True'
+      DJANGO_CACHE_BACKEND: django_redis.cache.RedisCache
+      DJANGO_CACHE_CLIENT_CLASS: django_redis.client.DefaultClient
+      DJANGO_CACHE_CLIENT_PASSWORD: fatergos
+      DJANGO_CACHE_LOCATION: redis://default:fatergos@redis:6379/1
+      DJANGO_CACHE_TIMEOUT: '1296000'
+      DJANGO_COLLECTSTATIC_ON_STARTUP: 'True'
+      DJANGO_DB_DATABASE: wger
+      DJANGO_DB_ENGINE: django.db.backends.postgresql
+      DJANGO_DB_HOST: postgres
+      DJANGO_DB_PASSWORD: fatergos
+      DJANGO_DB_PORT: '5432'
+      DJANGO_DB_USER: wger
+      DJANGO_DEBUG: 'False'
+      DJANGO_PERFORM_MIGRATIONS: 'True'
+      JWT_PRIVATE_KEY: >-
+        eyJrdHkiOiAiUlNBIiwgImtleV9vcHMiOiBbInNpZ24iXSwgIm4iOiAienQyZHZtX09XNHJPVHNQWmUweTVoMWV2anFTSERzbkRIZHhEZlhzRHp4aHk1Yk9KcDNpUU13VVMzQUFOWjVya1JoN3A5OEZJNXcwZ1ZvN2pvQVUwRzVCa1NKT2g5VDV5eGdMNzZfNndmNkZwMU5waTJmR2JBcnJUQURXck1keXZnTTRRVzFuRGxfbHdrQnNuQXhwaFc1SWQtNzZXSjFQbktpZzhJMDA3d1pOZTlGWGRXdTJkdXVBdFI2dGg2enh3WVZOVnBfQWJBMlZXWUpDVG1hS0NMSzMtWlJ3Mms4X3h2SjZIN0ptX05RRGN4N3RuUjFKV0tMYk5WejRVMUxNb0NSS0xENEEzaXN3ODhTSGg2aXFJVXMyanRHbDZnVWRQaFZHXzAwVkVjTVFKOTIwTXcxeFdKdHRKX3VQNEt6VFVFQlMwUjNrcFg2NnZhZ2NPdEtoN0ZRIiwgImUiOiAiQVFBQiIsICJkIjogIkdnb1FkS3ZMUEgtczk0STBxbzRlWG5oOXEwVnZrTDk1OVpUSDFCQTdpd0tIVl8yeENxa2s4WjhtWUJZTG1lcUg2SUcwcnRDZ05pRlRYRUh4U2lfTmZ0aS1udG9paldYV2ViRmZkN1hnRHJqSlF4ZFlVUm5XQ3RKc2dfNjlkWEhUajdHZ29uY2FwVk1yUmFCOVdTa2xieXJsNWszM3hheU1rU1J1YVgwcjBfSllhSEEzY2ZtUWxxR21SSERWTVVyajlIVWFYMjlZUFM3YTJmM1Zib1Ywb1RHZHhnZ0RYMGdTOU8wd2wzZEhUMWI3Rk1kZG9KLXN4VTVtZ0x6Sl9Lc2FQWlRaTFhFRm0wOHVKNEQyU040UjFnYm81cjd6eVRSc2hWdFZtM25WcEU1X0hZV0llcmNWaFZlMEdCRTlLdTRTUG5zSDRGRlJJS21CMmo0MDBWb2ZzdyIsICJwIjogIi1RVGtfdUZNaURHVjQ0UVNoV2tRNTRzdkJQcGRIUnZKVVd5OGV1TkRaZTB1NUVhdW1qd1V0bTUyRjZ0aTlfNFRpNjJ2bzJZV21FdG51NTMtUy10Z0FfZW9nVGhoc2Q0NlhlMnpoUElCT2VGay03Wms2ZFdVWExfOXNGLV9JS0NROGd2M2xfZzRQZ29sb1gySjRLUS00UExDd01ZTFZpN205SFJmUlJsR1NRTSIsICJxIjogIjFLbzBTRVg5eW5LbEUzQjlaTXhGdDg3MHczcjhKNHlPNEVydUdwZ21VUmRaUmxuRXNLVGxBbFNIMExxZHJCNnFsYVRPMmhWcmpNMmQ1WnRyRFY2bm1RbkRFOGJ4X1U3enkxbExKZkJvWjItNXR1bjF4dnpYZDFqY0gwQ21CWlZqcVVZaFYtMEdzd3JuMnRESXN1WnNnTEpfc25PSlBseGdVS3FtR0NuQzFBYyIsICJkcCI6ICI4X2N1bnVOLUJtU0dFOXZlQldSMUVsUVRJYzVqa1ZRYXZUSkp5aC1EZFlXVkRrS05ael83anV2VHVNYkpkR3N4SFFSeDhpVGZlQjlRSnNqWVRlcnhLNUhrUFkxT2NXTm1UWVhHX2pYV3E2MC1NVGwxem4zWUY3SmxTZm5VRjVRWHpYdVpfQUpNbjhOek1LNzhlT0NSVmZPZ2lCcV9HcFZpNGhadERCYUJfSjgiLCAiZHEiOiAiTER0bWVtM01WcEkzMFc1Qk5uamlPMVBaUnR0S25QTTRPR0I5VzV5dnc0Z0dzb0l6VGNaT040amJZc2VkeWRIckN3cm5WeWJEWXRyVmI0OC0yZDRKSC1TTzVZc29nOVlyRU8xMm11S0E1SnF4VnVFY2xKRzhRdi1CY1NLaUpXRW9CR29vdnpfMmQ4RFo3b0lrYkVsTzRnbS1VNkNDT0MxQWZ5YXZPekZjYTNzIiwgInFpIjogInRxakxOTElFSXo5MHpJSnpoOHZlbGVZOEhiSHdqSFRKdVdJdDdSaDVkZ0pCeENTMU5wOWxxTk5jUk1rV2dzOFNPNEhwcG9rNHUxUEJONURvRUVuSHpMcmoyZnFDcE9UT1AtNXFwQVJuNlpMc3hSazdNejhoVkN0ZEdnUjZBa3JxWWNFeGh2UmZNa05wc2szNElIVjZwRE03c2M2QV9URjhGbEtpaVhuWHBDbyIsICJhbGciOiAiUlMyNTYiLCAia2lkIjogIndnZXIifQ==
+      JWT_PUBLIC_KEY: >-
+        eyJrdHkiOiAiUlNBIiwgIm4iOiAienQyZHZtX09XNHJPVHNQWmUweTVoMWV2anFTSERzbkRIZHhEZlhzRHp4aHk1Yk9KcDNpUU13VVMzQUFOWjVya1JoN3A5OEZJNXcwZ1ZvN2pvQVUwRzVCa1NKT2g5VDV5eGdMNzZfNndmNkZwMU5waTJmR2JBcnJUQURXck1keXZnTTRRVzFuRGxfbHdrQnNuQXhwaFc1SWQtNzZXSjFQbktpZzhJMDA3d1pOZTlGWGRXdTJkdXVBdFI2dGg2enh3WVZOVnBfQWJBMlZXWUpDVG1hS0NMSzMtWlJ3Mms4X3h2SjZIN0ptX05RRGN4N3RuUjFKV0tMYk5WejRVMUxNb0NSS0xENEEzaXN3ODhTSGg2aXFJVXMyanRHbDZnVWRQaFZHXzAwVkVjTVFKOTIwTXcxeFdKdHRKX3VQNEt6VFVFQlMwUjNrcFg2NnZhZ2NPdEtoN0ZRIiwgImUiOiAiQVFBQiIsICJhbGciOiAiUlMyNTYiLCAia2lkIjogIndnZXIifQ==
+      NVIDIA_VISIBLE_DEVICES: void
+      REFRESH_TOKEN_LIFETIME: '3000'
+      SECRET_KEY: VVMR9DmZZZRM0QIzCX6Bk_Oy4TlgYC9YKSY4UuQUIFilPI5san
+      SITE_URL: http://10.168.168.236:30170
+      TIME_ZONE: America/New_York
+      TZ: America/New_York
+      UMASK: '002'
+      UMASK_SET: '002'
+      USE_CELERY: 'True'
+      WGER_USE_GUNICORN: 'True'
+    group_add:
+      - 568
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_interval: 2s
+      start_period: 15s
+      test:
+        - CMD
+        - celery
+        - '-A'
+        - wger
+        - inspect
+        - ping
+      timeout: 5s
+    image: wger/server:2.6.0
+    networks:
+      ix-internal-wger-wger-net: {}
+    platform: linux/amd64
+    privileged: False
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges=true
+    stdin_open: False
+    tty: False
+    user: '1000:1000'
+    volumes:
+      - bind:
+          create_host_path: False
+          propagation: rprivate
+        read_only: False
+        source: /mnt/glop/wger-data/beat
+        target: /home/wger/beat
+        type: bind
+  nginx:
+    cap_drop:
+      - ALL
+    configs:
+      - source: nginx.conf
+        target: /etc/nginx/conf.d/default.conf
+    depends_on:
+      - server
+      - powersync
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4096M
+    environment:
+      NVIDIA_VISIBLE_DEVICES: void
+      TZ: America/New_York
+      UMASK: '002'
+      UMASK_SET: '002'
+    group_add:
+      - 568
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_interval: 2s
+      start_period: 15s
+      test:
+        - CMD
+        - curl
+        - '--request'
+        - GET
+        - '--silent'
+        - '--output'
+        - /dev/null
+        - '--show-error'
+        - '--fail'
+        - http://127.0.0.1:30170/health
+      timeout: 5s
+    image: nginxinc/nginx-unprivileged:1.31.3
+    networks:
+      ix-internal-wger-wger-net: {}
+    platform: linux/amd64
+    ports:
+      - mode: ingress
+        protocol: tcp
+        published: 30170
+        target: 30170
+    privileged: False
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges=true
+    stdin_open: False
+    tty: False
+    user: '1000:1000'
+    volumes:
+      - bind:
+          create_host_path: False
+          propagation: rprivate
+        read_only: True
+        source: /mnt/glop/wger-data/media
+        target: /wger/media
+        type: bind
+      - bind:
+          create_host_path: False
+          propagation: rprivate
+        read_only: True
+        source: /mnt/glop/wger-data/static
+        target: /wger/static
+        type: bind
+      - bind:
+          create_host_path: False
+          propagation: rprivate
+        read_only: True
+        source: /mnt/glop/wger-data/wger-config/nginx.conf
+        target: /etc/nginx/conf.d/default.conf
+        type: bind
+  permissions:
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    cap_drop:
+      - ALL
+    configs:
+      - mode: 320
+        source: permissions_actions_data
+        target: /script/actions.json
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1024M
+    entrypoint:
+      - python3
+      - /script/permissions.py
+    environment:
+      NVIDIA_VISIBLE_DEVICES: void
+      TZ: America/New_York
+      UMASK: '002'
+      UMASK_SET: '002'
+    group_add:
+      - 568
+    healthcheck:
+      disable: True
+    image: ixsystems/container-utils:1.0.2
+    network_mode: none
+    platform: linux/amd64
+    privileged: False
+    restart: on-failure:1
+    security_opt:
+      - no-new-privileges=true
+    stdin_open: False
+    tty: False
+    user: '0:0'
+    volumes:
+      - read_only: False
+        source: redis-data
+        target: /mnt/permission/redis_redis_data
+        type: volume
+        volume:
+          nocopy: False
+  postgres:
+    cap_drop:
+      - ALL
+    depends_on:
+      permissions:
+        condition: service_completed_successfully
+      postgres_upgrade:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4096M
+    environment:
+      NVIDIA_VISIBLE_DEVICES: void
+      PGDATA: /var/lib/postgresql/18/docker
+      PGPORT: '5432'
+      POSTGRES_DB: wger
+      POSTGRES_PASSWORD: fatergos
+      POSTGRES_USER: wger
+      TZ: America/New_York
+      UMASK: '002'
+      UMASK_SET: '002'
+    group_add:
+      - 568
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_interval: 2s
+      start_period: 15s
+      test:
+        - CMD
+        - pg_isready
+        - '-h'
+        - 127.0.0.1
+        - '-p'
+        - '5432'
+        - '-U'
+        - wger
+        - '-d'
+        - wger
+      timeout: 5s
+    image: postgres:18.4-trixie
+    networks:
+      ix-internal-wger-wger-net: {}
+    platform: linux/amd64
+    privileged: False
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges=true
+    shm_size: 256M
+    stdin_open: False
+    stop_grace_period: 60s
+    tty: False
+    user: '999:999'
+    volumes:
+      - bind:
+          create_host_path: False
+          propagation: rprivate
+        read_only: False
+        source: /mnt/glop/wger-data/pgdata
+        target: /var/lib/postgresql
+        type: bind
+  postgres_upgrade:
+    cap_drop:
+      - ALL
+    depends_on:
+      permissions:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1024M
+    entrypoint:
+      - /bin/bash
+      - '-c'
+      - /upgrade.sh
+    environment:
+      NVIDIA_VISIBLE_DEVICES: void
+      PGDATA: /var/lib/postgresql/18/docker
+      PGPORT: '5432'
+      POSTGRES_DB: wger
+      POSTGRES_PASSWORD: fatergos
+      POSTGRES_USER: wger
+      TARGET_VERSION: '18'
+      TZ: America/New_York
+      UMASK: '002'
+      UMASK_SET: '002'
+    group_add:
+      - 568
+    healthcheck:
+      disable: True
+    image: ixsystems/postgres-upgrade:1.2.13
+    network_mode: none
+    platform: linux/amd64
+    privileged: False
+    restart: on-failure:1
+    security_opt:
+      - no-new-privileges=true
+    stdin_open: False
+    tty: False
+    user: '999:999'
+    volumes:
+      - bind:
+          create_host_path: False
+          propagation: rprivate
+        read_only: False
+        source: /mnt/glop/wger-data/pgdata
+        target: /var/lib/postgresql
+        type: bind
+  powersync:
+    command:
+      - start
+      - '-r'
+      - unified
+    depends_on:
+      postgres:
+        condition: service_healthy
+      server:
+        condition: service_healthy
+    image: docker.io/journeyapps/powersync-service:latest
+    logging:
+      driver: json-file
+      options:
+        max-file: 3
+        max-size: 10m
+    networks:
+      ix-internal-wger-wger-net: {}
+    ports:
+      - '3022:8080'
+    volumes:
+      - /mnt/glop/wger-data/wger-config/powersync.yaml:/app/powersync.yaml:ro
+      - /mnt/glop/wger-data/wger-config/sync_rules.yaml:/app/sync_rules.yaml:ro
+  redis:
+    cap_drop:
+      - ALL
+    command:
+      - '--port'
+      - '6379'
+      - '--requirepass'
+      - fatergos
+    depends_on:
+      permissions:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4096M
+    environment:
+      NVIDIA_VISIBLE_DEVICES: void
+      REDIS_PASSWORD: fatergos
+      TZ: America/New_York
+      UMASK: '002'
+      UMASK_SET: '002'
+    group_add:
+      - 568
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_interval: 2s
+      start_period: 15s
+      test:
+        - CMD
+        - redis-cli
+        - '-h'
+        - 127.0.0.1
+        - '-p'
+        - '6379'
+        - '-a'
+        - fatergos
+        - ping
+      timeout: 5s
+    image: valkey/valkey:9.1.1
+    networks:
+      ix-internal-wger-wger-net: {}
+    platform: linux/amd64
+    privileged: False
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges=true
+    stdin_open: False
+    stop_grace_period: 60s
+    tty: False
+    user: '568:568'
+    volumes:
+      - read_only: False
+        source: redis-data
+        target: /data
+        type: volume
+        volume:
+          nocopy: False
+  server:
+    cap_drop:
+      - ALL
+    depends_on:
+      permissions:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4096M
+    environment:
+      CELERY_BACKEND: redis://default:fatergos@redis:6379/2
+      CELERY_BROKER: redis://default:fatergos@redis:6379/2
+      CELERY_FLOWER_PASSWORD: IKYM2ot5yXrC8yD_LDwrkn92egzK3Szd
+      CSRF_TRUSTED_ORIGINS: http://10.168.168.236:30170
+      DEBUG: 'True'
+      DJANGO_CACHE_BACKEND: django_redis.cache.RedisCache
+      DJANGO_CACHE_CLIENT_CLASS: django_redis.client.DefaultClient
+      DJANGO_CACHE_CLIENT_PASSWORD: fatergos
+      DJANGO_CACHE_LOCATION: redis://default:fatergos@redis:6379/1
+      DJANGO_CACHE_TIMEOUT: '1296000'
+      DJANGO_COLLECTSTATIC_ON_STARTUP: 'True'
+      DJANGO_DB_DATABASE: wger
+      DJANGO_DB_ENGINE: django.db.backends.postgresql
+      DJANGO_DB_HOST: postgres
+      DJANGO_DB_PASSWORD: fatergos
+      DJANGO_DB_PORT: '5432'
+      DJANGO_DB_USER: wger
+      DJANGO_DEBUG: 'True'
+      DJANGO_PERFORM_MIGRATIONS: 'True'
+      JWT_PRIVATE_KEY: >-
+        eyJrdHkiOiAiUlNBIiwgImtleV9vcHMiOiBbInNpZ24iXSwgIm4iOiAienQyZHZtX09XNHJPVHNQWmUweTVoMWV2anFTSERzbkRIZHhEZlhzRHp4aHk1Yk9KcDNpUU13VVMzQUFOWjVya1JoN3A5OEZJNXcwZ1ZvN2pvQVUwRzVCa1NKT2g5VDV5eGdMNzZfNndmNkZwMU5waTJmR2JBcnJUQURXck1keXZnTTRRVzFuRGxfbHdrQnNuQXhwaFc1SWQtNzZXSjFQbktpZzhJMDA3d1pOZTlGWGRXdTJkdXVBdFI2dGg2enh3WVZOVnBfQWJBMlZXWUpDVG1hS0NMSzMtWlJ3Mms4X3h2SjZIN0ptX05RRGN4N3RuUjFKV0tMYk5WejRVMUxNb0NSS0xENEEzaXN3ODhTSGg2aXFJVXMyanRHbDZnVWRQaFZHXzAwVkVjTVFKOTIwTXcxeFdKdHRKX3VQNEt6VFVFQlMwUjNrcFg2NnZhZ2NPdEtoN0ZRIiwgImUiOiAiQVFBQiIsICJkIjogIkdnb1FkS3ZMUEgtczk0STBxbzRlWG5oOXEwVnZrTDk1OVpUSDFCQTdpd0tIVl8yeENxa2s4WjhtWUJZTG1lcUg2SUcwcnRDZ05pRlRYRUh4U2lfTmZ0aS1udG9paldYV2ViRmZkN1hnRHJqSlF4ZFlVUm5XQ3RKc2dfNjlkWEhUajdHZ29uY2FwVk1yUmFCOVdTa2xieXJsNWszM3hheU1rU1J1YVgwcjBfSllhSEEzY2ZtUWxxR21SSERWTVVyajlIVWFYMjlZUFM3YTJmM1Zib1Ywb1RHZHhnZ0RYMGdTOU8wd2wzZEhUMWI3Rk1kZG9KLXN4VTVtZ0x6Sl9Lc2FQWlRaTFhFRm0wOHVKNEQyU040UjFnYm81cjd6eVRSc2hWdFZtM25WcEU1X0hZV0llcmNWaFZlMEdCRTlLdTRTUG5zSDRGRlJJS21CMmo0MDBWb2ZzdyIsICJwIjogIi1RVGtfdUZNaURHVjQ0UVNoV2tRNTRzdkJQcGRIUnZKVVd5OGV1TkRaZTB1NUVhdW1qd1V0bTUyRjZ0aTlfNFRpNjJ2bzJZV21FdG51NTMtUy10Z0FfZW9nVGhoc2Q0NlhlMnpoUElCT2VGay03Wms2ZFdVWExfOXNGLV9JS0NROGd2M2xfZzRQZ29sb1gySjRLUS00UExDd01ZTFZpN205SFJmUlJsR1NRTSIsICJxIjogIjFLbzBTRVg5eW5LbEUzQjlaTXhGdDg3MHczcjhKNHlPNEVydUdwZ21VUmRaUmxuRXNLVGxBbFNIMExxZHJCNnFsYVRPMmhWcmpNMmQ1WnRyRFY2bm1RbkRFOGJ4X1U3enkxbExKZkJvWjItNXR1bjF4dnpYZDFqY0gwQ21CWlZqcVVZaFYtMEdzd3JuMnRESXN1WnNnTEpfc25PSlBseGdVS3FtR0NuQzFBYyIsICJkcCI6ICI4X2N1bnVOLUJtU0dFOXZlQldSMUVsUVRJYzVqa1ZRYXZUSkp5aC1EZFlXVkRrS05ael83anV2VHVNYkpkR3N4SFFSeDhpVGZlQjlRSnNqWVRlcnhLNUhrUFkxT2NXTm1UWVhHX2pYV3E2MC1NVGwxem4zWUY3SmxTZm5VRjVRWHpYdVpfQUpNbjhOek1LNzhlT0NSVmZPZ2lCcV9HcFZpNGhadERCYUJfSjgiLCAiZHEiOiAiTER0bWVtM01WcEkzMFc1Qk5uamlPMVBaUnR0S25QTTRPR0I5VzV5dnc0Z0dzb0l6VGNaT040amJZc2VkeWRIckN3cm5WeWJEWXRyVmI0OC0yZDRKSC1TTzVZc29nOVlyRU8xMm11S0E1SnF4VnVFY2xKRzhRdi1CY1NLaUpXRW9CR29vdnpfMmQ4RFo3b0lrYkVsTzRnbS1VNkNDT0MxQWZ5YXZPekZjYTNzIiwgInFpIjogInRxakxOTElFSXo5MHpJSnpoOHZlbGVZOEhiSHdqSFRKdVdJdDdSaDVkZ0pCeENTMU5wOWxxTk5jUk1rV2dzOFNPNEhwcG9rNHUxUEJONURvRUVuSHpMcmoyZnFDcE9UT1AtNXFwQVJuNlpMc3hSazdNejhoVkN0ZEdnUjZBa3JxWWNFeGh2UmZNa05wc2szNElIVjZwRE03c2M2QV9URjhGbEtpaVhuWHBDbyIsICJhbGciOiAiUlMyNTYiLCAia2lkIjogIndnZXIifQ==
+      JWT_PUBLIC_KEY: >-
+        eyJrdHkiOiAiUlNBIiwgIm4iOiAienQyZHZtX09XNHJPVHNQWmUweTVoMWV2anFTSERzbkRIZHhEZlhzRHp4aHk1Yk9KcDNpUU13VVMzQUFOWjVya1JoN3A5OEZJNXcwZ1ZvN2pvQVUwRzVCa1NKT2g5VDV5eGdMNzZfNndmNkZwMU5waTJmR2JBcnJUQURXck1keXZnTTRRVzFuRGxfbHdrQnNuQXhwaFc1SWQtNzZXSjFQbktpZzhJMDA3d1pOZTlGWGRXdTJkdXVBdFI2dGg2enh3WVZOVnBfQWJBMlZXWUpDVG1hS0NMSzMtWlJ3Mms4X3h2SjZIN0ptX05RRGN4N3RuUjFKV0tMYk5WejRVMUxNb0NSS0xENEEzaXN3ODhTSGg2aXFJVXMyanRHbDZnVWRQaFZHXzAwVkVjTVFKOTIwTXcxeFdKdHRKX3VQNEt6VFVFQlMwUjNrcFg2NnZhZ2NPdEtoN0ZRIiwgImUiOiAiQVFBQiIsICJhbGciOiAiUlMyNTYiLCAia2lkIjogIndnZXIifQ==
+      NVIDIA_VISIBLE_DEVICES: void
+      REFRESH_TOKEN_LIFETIME: '3000'
+      SECRET_KEY: VVMR9DmZZZRM0QIzCX6Bk_Oy4TlgYC9YKSY4UuQUIFilPI5san
+      SITE_URL: http://10.168.168.236:30170
+      TIME_ZONE: America/New_York
+      TZ: America/New_York
+      UMASK: '002'
+      UMASK_SET: '002'
+      USE_CELERY: 'True'
+      WGER_PORT: '8000'
+      WGER_USE_GUNICORN: 'True'
+    group_add:
+      - 568
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_interval: 2s
+      start_period: 15s
+      test:
+        - CMD
+        - wget
+        - '--quiet'
+        - '--spider'
+        - http://127.0.0.1:8000/
+      timeout: 5s
+    image: wger/server:2.6.0
+    networks:
+      ix-internal-wger-wger-net: {}
+    platform: linux/amd64
+    privileged: False
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges=true
+    stdin_open: False
+    tty: False
+    user: '1000:1000'
+    volumes:
+      - bind:
+          create_host_path: False
+          propagation: rprivate
+        read_only: False
+        source: /mnt/glop/wger-data/media
+        target: /home/wger/media
+        type: bind
+      - bind:
+          create_host_path: False
+          propagation: rprivate
+        read_only: False
+        source: /mnt/glop/wger-data/static
+        target: /home/wger/static
+        type: bind
+  worker:
+    cap_drop:
+      - ALL
+    command:
+      - /start-worker
+    depends_on:
+      permissions:
+        condition: service_completed_successfully
+      server:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4096M
+    environment:
+      CELERY_BACKEND: redis://default:fatergos@redis:6379/2
+      CELERY_BROKER: redis://default:fatergos@redis:6379/2
+      CELERY_FLOWER_PASSWORD: IKYM2ot5yXrC8yD_LDwrkn92egzK3Szd
+      CSRF_TRUSTED_ORIGINS: http://10.168.168.236:30170
+      DEBUG: 'True'
+      DJANGO_CACHE_BACKEND: django_redis.cache.RedisCache
+      DJANGO_CACHE_CLIENT_CLASS: django_redis.client.DefaultClient
+      DJANGO_CACHE_CLIENT_PASSWORD: fatergos
+      DJANGO_CACHE_LOCATION: redis://default:fatergos@redis:6379/1
+      DJANGO_CACHE_TIMEOUT: '1296000'
+      DJANGO_COLLECTSTATIC_ON_STARTUP: 'True'
+      DJANGO_DB_DATABASE: wger
+      DJANGO_DB_ENGINE: django.db.backends.postgresql
+      DJANGO_DB_HOST: postgres
+      DJANGO_DB_PASSWORD: fatergos
+      DJANGO_DB_PORT: '5432'
+      DJANGO_DB_USER: wger
+      DJANGO_DEBUG: 'False'
+      DJANGO_PERFORM_MIGRATIONS: 'True'
+      JWT_PRIVATE_KEY: >-
+        eyJrdHkiOiAiUlNBIiwgImtleV9vcHMiOiBbInNpZ24iXSwgIm4iOiAienQyZHZtX09XNHJPVHNQWmUweTVoMWV2anFTSERzbkRIZHhEZlhzRHp4aHk1Yk9KcDNpUU13VVMzQUFOWjVya1JoN3A5OEZJNXcwZ1ZvN2pvQVUwRzVCa1NKT2g5VDV5eGdMNzZfNndmNkZwMU5waTJmR2JBcnJUQURXck1keXZnTTRRVzFuRGxfbHdrQnNuQXhwaFc1SWQtNzZXSjFQbktpZzhJMDA3d1pOZTlGWGRXdTJkdXVBdFI2dGg2enh3WVZOVnBfQWJBMlZXWUpDVG1hS0NMSzMtWlJ3Mms4X3h2SjZIN0ptX05RRGN4N3RuUjFKV0tMYk5WejRVMUxNb0NSS0xENEEzaXN3ODhTSGg2aXFJVXMyanRHbDZnVWRQaFZHXzAwVkVjTVFKOTIwTXcxeFdKdHRKX3VQNEt6VFVFQlMwUjNrcFg2NnZhZ2NPdEtoN0ZRIiwgImUiOiAiQVFBQiIsICJkIjogIkdnb1FkS3ZMUEgtczk0STBxbzRlWG5oOXEwVnZrTDk1OVpUSDFCQTdpd0tIVl8yeENxa2s4WjhtWUJZTG1lcUg2SUcwcnRDZ05pRlRYRUh4U2lfTmZ0aS1udG9paldYV2ViRmZkN1hnRHJqSlF4ZFlVUm5XQ3RKc2dfNjlkWEhUajdHZ29uY2FwVk1yUmFCOVdTa2xieXJsNWszM3hheU1rU1J1YVgwcjBfSllhSEEzY2ZtUWxxR21SSERWTVVyajlIVWFYMjlZUFM3YTJmM1Zib1Ywb1RHZHhnZ0RYMGdTOU8wd2wzZEhUMWI3Rk1kZG9KLXN4VTVtZ0x6Sl9Lc2FQWlRaTFhFRm0wOHVKNEQyU040UjFnYm81cjd6eVRSc2hWdFZtM25WcEU1X0hZV0llcmNWaFZlMEdCRTlLdTRTUG5zSDRGRlJJS21CMmo0MDBWb2ZzdyIsICJwIjogIi1RVGtfdUZNaURHVjQ0UVNoV2tRNTRzdkJQcGRIUnZKVVd5OGV1TkRaZTB1NUVhdW1qd1V0bTUyRjZ0aTlfNFRpNjJ2bzJZV21FdG51NTMtUy10Z0FfZW9nVGhoc2Q0NlhlMnpoUElCT2VGay03Wms2ZFdVWExfOXNGLV9JS0NROGd2M2xfZzRQZ29sb1gySjRLUS00UExDd01ZTFZpN205SFJmUlJsR1NRTSIsICJxIjogIjFLbzBTRVg5eW5LbEUzQjlaTXhGdDg3MHczcjhKNHlPNEVydUdwZ21VUmRaUmxuRXNLVGxBbFNIMExxZHJCNnFsYVRPMmhWcmpNMmQ1WnRyRFY2bm1RbkRFOGJ4X1U3enkxbExKZkJvWjItNXR1bjF4dnpYZDFqY0gwQ21CWlZqcVVZaFYtMEdzd3JuMnRESXN1WnNnTEpfc25PSlBseGdVS3FtR0NuQzFBYyIsICJkcCI6ICI4X2N1bnVOLUJtU0dFOXZlQldSMUVsUVRJYzVqa1ZRYXZUSkp5aC1EZFlXVkRrS05ael83anV2VHVNYkpkR3N4SFFSeDhpVGZlQjlRSnNqWVRlcnhLNUhrUFkxT2NXTm1UWVhHX2pYV3E2MC1NVGwxem4zWUY3SmxTZm5VRjVRWHpYdVpfQUpNbjhOek1LNzhlT0NSVmZPZ2lCcV9HcFZpNGhadERCYUJfSjgiLCAiZHEiOiAiTER0bWVtM01WcEkzMFc1Qk5uamlPMVBaUnR0S25QTTRPR0I5VzV5dnc0Z0dzb0l6VGNaT040amJZc2VkeWRIckN3cm5WeWJEWXRyVmI0OC0yZDRKSC1TTzVZc29nOVlyRU8xMm11S0E1SnF4VnVFY2xKRzhRdi1CY1NLaUpXRW9CR29vdnpfMmQ4RFo3b0lrYkVsTzRnbS1VNkNDT0MxQWZ5YXZPekZjYTNzIiwgInFpIjogInRxakxOTElFSXo5MHpJSnpoOHZlbGVZOEhiSHdqSFRKdVdJdDdSaDVkZ0pCeENTMU5wOWxxTk5jUk1rV2dzOFNPNEhwcG9rNHUxUEJONURvRUVuSHpMcmoyZnFDcE9UT1AtNXFwQVJuNlpMc3hSazdNejhoVkN0ZEdnUjZBa3JxWWNFeGh2UmZNa05wc2szNElIVjZwRE03c2M2QV9URjhGbEtpaVhuWHBDbyIsICJhbGciOiAiUlMyNTYiLCAia2lkIjogIndnZXIifQ==
+      JWT_PUBLIC_KEY: >-
+        eyJrdHkiOiAiUlNBIiwgIm4iOiAienQyZHZtX09XNHJPVHNQWmUweTVoMWV2anFTSERzbkRIZHhEZlhzRHp4aHk1Yk9KcDNpUU13VVMzQUFOWjVya1JoN3A5OEZJNXcwZ1ZvN2pvQVUwRzVCa1NKT2g5VDV5eGdMNzZfNndmNkZwMU5waTJmR2JBcnJUQURXck1keXZnTTRRVzFuRGxfbHdrQnNuQXhwaFc1SWQtNzZXSjFQbktpZzhJMDA3d1pOZTlGWGRXdTJkdXVBdFI2dGg2enh3WVZOVnBfQWJBMlZXWUpDVG1hS0NMSzMtWlJ3Mms4X3h2SjZIN0ptX05RRGN4N3RuUjFKV0tMYk5WejRVMUxNb0NSS0xENEEzaXN3ODhTSGg2aXFJVXMyanRHbDZnVWRQaFZHXzAwVkVjTVFKOTIwTXcxeFdKdHRKX3VQNEt6VFVFQlMwUjNrcFg2NnZhZ2NPdEtoN0ZRIiwgImUiOiAiQVFBQiIsICJhbGciOiAiUlMyNTYiLCAia2lkIjogIndnZXIifQ==
+      NVIDIA_VISIBLE_DEVICES: void
+      REFRESH_TOKEN_LIFETIME: '3000'
+      SECRET_KEY: VVMR9DmZZZRM0QIzCX6Bk_Oy4TlgYC9YKSY4UuQUIFilPI5san
+      SITE_URL: http://10.168.168.236:30170
+      TIME_ZONE: America/New_York
+      TZ: America/New_York
+      UMASK: '002'
+      UMASK_SET: '002'
+      USE_CELERY: 'True'
+      WGER_USE_GUNICORN: 'True'
+    group_add:
+      - 568
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_interval: 2s
+      start_period: 15s
+      test:
+        - CMD
+        - celery
+        - '-A'
+        - wger
+        - inspect
+        - ping
+      timeout: 5s
+    image: wger/server:2.6.0
+    networks:
+      ix-internal-wger-wger-net: {}
+    platform: linux/amd64
+    privileged: False
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges=true
+    stdin_open: False
+    tty: False
+    user: '1000:1000'
+    volumes:
+      - bind:
+          create_host_path: False
+          propagation: rprivate
+        read_only: False
+        source: /mnt/glop/wger-data/media
+        target: /home/wger/media
+        type: bind
+volumes:
+  redis-data: {}
+x-action-required: False
+x-notes: >
+  # Wger
+
+
+  ## Security
+
+
+  **Read the following security precautions to ensure that you wish to continue
+  using this application.**
+
+
+  ---
+
+
+  ### Container: [beat]
+
+
+  #### Joined networks
+
+
+  - ix-internal-wger-wger-net
+
+
+  #### Running user/group(s)
+
+
+  - User: 1000
+
+  - Group: 1000
+
+  - Supplementary Groups: apps
+
+
+  ---
+
+
+  ### Container: [nginx]
+
+
+  #### Joined networks
+
+
+  - ix-internal-wger-wger-net
+
+
+  #### Running user/group(s)
+
+
+  - User: 1000
+
+  - Group: 1000
+
+  - Supplementary Groups: apps
+
+
+  ---
+
+
+  ### Container: [postgres]
+
+
+  #### Joined networks
+
+
+  - ix-internal-wger-wger-net
+
+
+  #### Running user/group(s)
+
+
+  - User: 999
+
+  - Group: 999
+
+  - Supplementary Groups: apps
+
+
+  ---
+
+
+  ### Container: [redis]
+
+
+  #### Joined networks
+
+
+  - ix-internal-wger-wger-net
+
+
+  #### Running user/group(s)
+
+
+  - User: 568
+
+  - Group: 568
+
+  - Supplementary Groups: apps
+
+
+  ---
+
+
+  ### Container: [server]
+
+
+  #### Joined networks
+
+
+  - ix-internal-wger-wger-net
+
+
+  #### Running user/group(s)
+
+
+  - User: 1000
+
+  - Group: 1000
+
+  - Supplementary Groups: apps
+
+
+  ---
+
+
+  ### Container: [worker]
+
+
+  #### Joined networks
+
+
+  - ix-internal-wger-wger-net
+
+
+  #### Running user/group(s)
+
+
+  - User: 1000
+
+  - Group: 1000
+
+  - Supplementary Groups: apps
+
+
+  ---
+
+
+  ### Container: [permissions]
+
+
+  **This container is short-lived.**
+
+
+  #### Running user/group(s)
+
+
+  - User: root
+
+  - Group: root
+
+  - Supplementary Groups: apps
+
+
+  ---
+
+
+  ### Container: [postgres_upgrade]
+
+
+  **This container is short-lived.**
+
+
+  #### Running user/group(s)
+
+
+  - User: 999
+
+  - Group: 999
+
+  - Supplementary Groups: apps
+
+
+  ---
+
+
+  In order to sync exercises, you need to shell into the `server` container
+
+  and run the following commands (This process can take a while):
+
+
+  ```sh
+
+  python3 manage.py sync-exercises
+
+  python3 manage.py download-exercise-images
+
+  python3 manage.py download-exercise-videos
+
+  ```
+
+
+  ## Bug Reports and Feature Requests
+
+
+  If you find a bug in this app or have an idea for a new feature, please file
+  an issue at
+
+  https://github.com/truenas/apps
+x-portals:
+  - host: 0.0.0.0
+    name: Web UI
+    path: /
+    port: 30170
+    scheme: http
