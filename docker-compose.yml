@@ -263,13 +263,13 @@ services:
     # Note that this container must finish executing before starting the sync or unified container.
     command: ["start", "-r", "unified"]
 
-    volumes:
-      # Mounts the PowerSync config folder (powersync.yaml + sync_rules.yaml).
-      # Paths in an `include:`d file are resolved relative to *this* file,
-      # not to the including docker-compose.yml. Production setups that want
-      # their own config can override this mount via `volumes: !override`
-      # in their compose file.
-      # - ./services/config-powersync:config:ro
+    # volumes:
+    #   # Mounts the PowerSync config folder (powersync.yaml + sync_rules.yaml).
+    #   # Paths in an `include:`d file are resolved relative to *this* file,
+    #   # not to the including docker-compose.yml. Production setups that want
+    #   # their own config can override this mount via `volumes: !override`
+    #   # in their compose file.
+    #   - ./services/config-powersync:config:ro
 
     env_file:
       - ./config/prod.env
