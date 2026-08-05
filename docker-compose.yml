@@ -111,6 +111,9 @@ configs:
         client_max_body_size 100M;
       }
 
+
+
+
   permissions_actions_data:
     content: >-
       [{"read_only": false, "mount_path": "/mnt/permission/redis_redis_data",
@@ -182,7 +185,7 @@ services:
       # not to the including docker-compose.yml. Production setups that want
       # their own config can override this mount via `volumes: !override`
       # in their compose file.
-      - ./services/config-powersync:/config
+      - ./services/config-powersync:config:ro
 
     env_file:
       - ./config/prod.env
@@ -198,7 +201,7 @@ services:
       #   POWERSYNC_CONFIG_B64: [base64 encoded content]
       # or e.g.: Via a command line parameter
       #    command: ['start', '-r', 'unified', '-c64', '[base64 encoded content]']
-      POWERSYNC_CONFIG_PATH: /config/powersync.yaml
+      POWERSYNC_CONFIG_PATH: config/powersync.yaml
 
       # Sync rules can be specified as base 64 encoded YAML
       # e.g: Via an environment variable
