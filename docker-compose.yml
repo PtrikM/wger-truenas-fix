@@ -9,7 +9,7 @@
 #     file: ./config/nginx.conf
 configs:
   nginx.conf:
-    content: >
+    content: |
       upstream wger {
         server web:8000;
       }
