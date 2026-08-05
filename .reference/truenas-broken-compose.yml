@@ -5,11 +5,7 @@ configs:
 
       # - Uses upstream value when behind reverse proxy (Traefik, Caddy, etc.)
 
-      # - Falls back to nginx's scheme for direct connections and port
-      forwarding
-      upstream wger {
-        server web:8000;
-      }
+      # - Falls back to nginx's scheme for direct connections and port forwarding
 
       # Used by the /ps/ proxy below. The nginx service's `depends_on:` lists
       # `powersync` so it is started before nginx tries to resolve this hostname.
