@@ -115,7 +115,7 @@ services:
       - web
       # - powersync
     volumes:
-      - ./config:/etc/nginx/conf.d
+      - ./config/nginx-conf:/etc/nginx/conf.d
       - static:/wger/static:ro
       - media:/wger/media:ro
     ports:
